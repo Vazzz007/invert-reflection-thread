@@ -1,0 +1,309 @@
+#include <stdio.h>
+#include <ctype.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <fenv.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+#include <time.h>
+#include <pthread.h>
+#include "args.h"
+#include "create_matrix.h"
+#include "func_eval.h"
+
+#define EPS 1e-16
+
+/* factorial supports the following command-line arguments:
+ * 
+ * -i input_file_name.txt - name of the input file (default = NULL)
+ * -n number - number of elements (default = 0)
+ * -v - option for debugging
+ * -f formula - define formula
+ */
+
+
+struct timespec diff(struct timespec start, struct timespec end);
+
+struct timespec diff(struct timespec start, struct timespec end)
+{
+    struct timespec temp;
+    if ((end.tv_nsec-start.tv_nsec)<0) {
+        temp.tv_sec = end.tv_sec-start.tv_sec-1;
+        temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+    } else {
+        temp.tv_sec = end.tv_sec-start.tv_sec;
+        temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+    }
+    return temp;
+}
+
+typedef struct
+{
+    int n;
+    double *A;
+    double *X;
+    int my_rank;
+    int total_threads;
+} ARGS;
+
+struct timespec time_thread_total;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void *Inversion(void *p_arg);
+
+void *Inversion(void *p_arg)
+{
+    ARGS *arg = (ARGS*)p_arg;
+    struct timespec time_thread_start, time_thread_end;
+
+    if( clock_gettime( CLOCK_MONOTONIC, &time_thread_start) == -1 ) {
+        perror( "clock gettime" );
+        exit( EXIT_FAILURE );
+    }
+    
+    InvMatrix(arg->n, arg->A, arg->X, arg->my_rank, arg->total_threads);
+    
+    if( clock_gettime( CLOCK_MONOTONIC, &time_thread_end) == -1 ) {
+        perror( "clock gettime" );
+        exit( EXIT_FAILURE );
+    }
+    time_thread_end = diff(time_thread_start, time_thread_end);
+
+    pthread_mutex_lock(&mutex);
+    time_thread_total.tv_sec += time_thread_end.tv_sec;
+    time_thread_total.tv_nsec += time_thread_end.tv_nsec;
+    pthread_mutex_unlock(&mutex);
+
+    return NULL;
+}
+
+int main(int argc, char **argv){
+    
+    feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
+    
+    struct timespec time_start, time_end;
+    
+    int n = 0;
+    int max_out = 0;
+    char *inFileName = NULL;
+    int verbose = 0;
+    char *formula = NULL;
+    double *X = NULL;
+    double *A = NULL;
+    FILE *fin;
+    int result = 1;
+    int total_threads;
+    pthread_t *threads;
+    ARGS *args;
+    
+    
+    if ((get_args(&n, &inFileName, &verbose, &formula, &max_out, &total_threads, argc, argv)) != 0){
+        fprintf (stderr, "\nError: Can't get arguments!\n");
+        return -1;
+    }
+    
+    if (inFileName == NULL){
+        A = (double *)malloc (n * n * sizeof(double));
+        X = (double *)malloc (n * n * sizeof(double));
+        threads = (pthread_t*)malloc(total_threads * sizeof(pthread_t));
+        args = (ARGS*)malloc(total_threads * sizeof(ARGS));
+        
+        if ((A && X && threads && args) != 1) {
+            printf ("\nError: Not enough memory!\n");
+            if (A == NULL)
+                free(A);
+            if (X == NULL)
+                free(X);
+            if (threads == NULL)
+                free(threads);
+            if (args == NULL)
+                free(args);
+            return -1;
+        }
+        
+        if ((create_matrix(A, n, formula)) != 0){
+            printf ("\nError: Can't create matrix!\n");
+            free(A);
+            free(X);
+            free(threads);
+            free(args);
+            return -1;
+        }
+    } else {
+        fin = fopen(inFileName, "r");
+        
+        if (fin == NULL){
+            printf("\nError: Can't open file!\n");
+            return -1;
+        }
+        
+        if (fscanf(fin, "%d", &n) != 1){
+            printf("\nError: Can't read dimension from file!\n");
+            fclose(fin);
+            return -1;
+        }
+        
+        if (n < 1){
+            printf ("\nError: Invalid matrix dimension!\n");
+            fclose(fin);
+            return -1;
+        }
+        
+        A = (double *)malloc (n * n * sizeof(double));
+        X = (double *)malloc (n * n * sizeof(double));
+        threads = (pthread_t*)malloc(total_threads * sizeof(pthread_t));
+        args = (ARGS*)malloc(total_threads * sizeof(ARGS));
+        
+        if ((A && X && threads && args) != 1) {
+            printf ("\nError: Not enough memory!\n");
+            if (A == NULL)
+                free(A);
+            if (X == NULL)
+                free(X);
+            if (threads == NULL)
+                free(threads);
+            if (args == NULL)
+                free(args);
+            return -1;
+        }
+        
+        if (InputMatrix(n, A, fin) != 0){
+            printf("\nError: Can't read matrix from file!\n");
+            fclose(fin);
+            free(A);
+            free(X);
+            free(threads);
+            free(args);
+            return -1;
+        }
+    }
+    
+    printf("\nMatrix A:\n");
+    
+    PrintMatrix(n, A, max_out);
+    
+    printf("\n");
+    
+    printf("\nCalculating...\n");
+    
+    for (int i = 0; i < total_threads; i++){
+        args[i].n = n;
+        args[i].A = A;
+        args[i].X = X;
+        args[i].my_rank = i;
+        args[i].total_threads = total_threads;
+    }
+    
+    if( clock_gettime( CLOCK_MONOTONIC, &time_start) == -1 ) {
+        perror( "clock gettime" );
+        exit( EXIT_FAILURE );
+    }
+    
+    for (int i = 0; i < total_threads; i++)
+        if (pthread_create(threads + i, 0, Inversion, args + i)){
+            printf("Cannot create thread %d!\n", i);
+
+            if (A) free(A);
+            if (X) free(X);
+            if (threads) free(threads);
+            if (args) free(args);
+
+            return -7;
+        }
+        
+    for (int i = 0; i < total_threads; i++)
+        if (pthread_join(threads[i], 0)){
+            printf("Cannot wait thread %d!\n", i);
+
+            if (A) free(A);
+            if (X) free(X);
+            if (threads) free(threads);
+            if (args) free(args);
+
+            return -8;
+        }
+    
+    if( clock_gettime( CLOCK_MONOTONIC, &time_end) == -1 ) {
+        perror( "clock gettime" );
+        exit( EXIT_FAILURE );
+    }
+    time_end = diff(time_start, time_end);
+    
+    if (result == -1){
+        printf("\nCan't invert.\n");
+    } else {
+        printf("\nMatrix A^{-1}:\n");
+        PrintMatrix(n, X, max_out);
+        printf("\n");
+        
+        printf("\nInversion time\t\t= %f sec.\n\
+                Total_thread_time\t\t= %f sec.\n\n", 
+               (double)time_end.tv_sec + (double)time_end.tv_nsec/(double)1000000000,
+               (double)time_thread_total.tv_sec + (double)time_thread_total.tv_nsec/(double)1000000000);
+        
+        
+        if (inFileName == NULL){
+            if ((create_matrix(A, n, formula)) != 0){
+                printf ("\nError: Can't create matrix!\n");
+                free(A);
+                free(X);
+                free(threads);
+                free(args);
+                return -1;
+            }
+        } else {
+            fin = fopen(inFileName, "r");
+	
+            if (fin == NULL){
+                printf("\nError: Can't open file!\n");
+                free(A);
+                free(X);
+                free(threads);
+                free(args);
+                return -1;
+            }
+	
+            if (fscanf(fin, "%d", &n) != 1){
+                printf("\nError: Can't read dimension from file!\n");
+                free(A);
+                free(X);
+                free(threads);
+                free(args);
+                fclose(fin);
+                return -1;
+            }
+
+            if (n < 1){
+                printf ("\nError: Invalid matrix dimension!\n");
+                free(A);
+                free(X);
+                free(threads);
+                free(args);
+                fclose(fin);
+                return -1;
+            }
+        
+            if (InputMatrix(n, A, fin) != 0){
+                printf("\nError: Can't read matrix from file!\n");
+                fclose(fin);
+                free(A);
+                free(X);
+                free(threads);
+                free(args);
+                return -1;
+            }
+            
+            fclose(fin);
+        }
+        
+        printf("\nSolution ||A * A^{-1} - I||\t= %e\n", SolutionError(n, A, X));
+    }
+
+    free(threads);
+    free(args);
+    free(A);
+    free(X);
+    
+    return 0;
+}
