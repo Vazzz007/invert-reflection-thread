@@ -6,26 +6,24 @@
 
 void synchronize(int total_threads)
 {
-	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-	static pthread_cond_t condvar_in = PTHREAD_COND_INITIALIZER;
-	static pthread_cond_t condvar_out = PTHREAD_COND_INITIALIZER;
-	static int threads_in = 0;
-	static int threads_out = 0;
+    static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    static pthread_cond_t condvar_in = PTHREAD_COND_INITIALIZER;
+    static pthread_cond_t condvar_out = PTHREAD_COND_INITIALIZER;
+    static int threads_in = 0;
+    static int threads_out = 0;
 
-	pthread_mutex_lock(&mutex);
+    pthread_mutex_lock(&mutex);
 
-	threads_in++;
-	if (threads_in >= total_threads)
-	{
+    threads_in++;
+    if (threads_in >= total_threads){
 		threads_out = 0;
 		pthread_cond_broadcast(&condvar_in);
-	} else
+    } else
 		while (threads_in < total_threads)
 			pthread_cond_wait(&condvar_in,&mutex);
 
-	threads_out++;
-	if (threads_out >= total_threads)
-	{
+    threads_out++;
+	if (threads_out >= total_threads){
 		threads_in = 0;
 		pthread_cond_broadcast(&condvar_out);
 	} else
@@ -35,7 +33,7 @@ void synchronize(int total_threads)
 	pthread_mutex_unlock(&mutex);
 }
 
-int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads)
+int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads, int *status)
 {
 	int i, j, k;
 	int first_row;
@@ -47,15 +45,18 @@ int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads)
 			for (j = 0; j < n; j++)
 				x[i * n + j] = (double)(i == j);
 
-	for (i = 0; i < n - 1; i++)
-	{
-		if (my_rank == 0)
-		{
+	for (i = 0; i < n - 1; i++){
+		if (my_rank == 0){
 			tmp1 = 0.0;
 			for (j = i + 1; j < n; j++)
 				tmp1 += a[j * n + i] * a[j * n + i];
 
 			tmp2 = sqrt(tmp1 + a[i * n + i] * a[i * n + i]);
+			
+			if (tmp2 < 1e-100){
+				*status = -1;
+				pthread_exit(NULL);
+			}
 
 			a[i * n + i] -= tmp2;
 

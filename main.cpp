@@ -45,6 +45,7 @@ typedef struct
     double *X;
     int my_rank;
     int total_threads;
+    int *status;
 } ARGS;
 
 struct timespec time_thread_total;
@@ -57,14 +58,14 @@ void *Inversion(void *p_arg)
     ARGS *arg = (ARGS*)p_arg;
     struct timespec time_thread_start, time_thread_end;
 
-    if( clock_gettime( CLOCK_MONOTONIC, &time_thread_start) == -1 ) {
+    if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_start) == -1 ) {
         perror( "clock gettime" );
         exit( EXIT_FAILURE );
     }
     
-    InvMatrix(arg->n, arg->A, arg->X, arg->my_rank, arg->total_threads);
+    InvMatrix(arg->n, arg->A, arg->X, arg->my_rank, arg->total_threads, arg->status);
     
-    if( clock_gettime( CLOCK_MONOTONIC, &time_thread_end) == -1 ) {
+    if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_end) == -1 ) {
         perror( "clock gettime" );
         exit( EXIT_FAILURE );
     }
@@ -200,8 +201,8 @@ int main(int argc, char **argv){
         exit( EXIT_FAILURE );
     }
     
-    for (int i = 0; i < total_threads; i++)
-        if (pthread_create(threads + i, 0, Inversion, args + i)){
+    for (int i = 0; i < total_threads; i++){
+        if (pthread_create(threads + i, NULL, Inversion, args + i)){
             printf("Cannot create thread %d!\n", i);
 
             if (A) free(A);
@@ -209,11 +210,20 @@ int main(int argc, char **argv){
             if (threads) free(threads);
             if (args) free(args);
 
-            return -7;
+            return -1;
         }
+	if (*args->status == -1){
+	   printf("Error: Matrix is uninvertible!\n");
+	   if (A) free(A);
+           if (X) free(X);
+           if (threads) free(threads);
+           if (args) free(args);
+	   return -1;
+	}
+    }
         
     for (int i = 0; i < total_threads; i++)
-        if (pthread_join(threads[i], 0)){
+        if (pthread_join(threads[i], NULL)){
             printf("Cannot wait thread %d!\n", i);
 
             if (A) free(A);
@@ -221,7 +231,7 @@ int main(int argc, char **argv){
             if (threads) free(threads);
             if (args) free(args);
 
-            return -8;
+            return -1;
         }
     
     if( clock_gettime( CLOCK_MONOTONIC, &time_end) == -1 ) {
@@ -254,7 +264,7 @@ int main(int argc, char **argv){
             }
         } else {
             fin = fopen(inFileName, "r");
-	
+
             if (fin == NULL){
                 printf("\nError: Can't open file!\n");
                 free(A);
@@ -263,7 +273,7 @@ int main(int argc, char **argv){
                 free(args);
                 return -1;
             }
-	
+
             if (fscanf(fin, "%d", &n) != 1){
                 printf("\nError: Can't read dimension from file!\n");
                 free(A);
