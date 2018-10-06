@@ -45,7 +45,7 @@ typedef struct
     double *X;
     int my_rank;
     int total_threads;
-    int *status;
+    int status;
 } ARGS;
 
 struct timespec time_thread_total;
@@ -63,7 +63,7 @@ void *Inversion(void *p_arg)
         exit( EXIT_FAILURE );
     }
     
-    InvMatrix(arg->n, arg->A, arg->X, arg->my_rank, arg->total_threads, arg->status);
+    InvMatrix(arg->n, arg->A, arg->X, arg->my_rank, arg->total_threads, &arg->status);
     
     if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_end) == -1 ) {
         perror( "clock gettime" );
@@ -212,17 +212,18 @@ int main(int argc, char **argv){
 
             return -1;
         }
-	if (*args->status == -1){
-	   printf("Error: Matrix is uninvertible!\n");
-	   if (A) free(A);
-           if (X) free(X);
-           if (threads) free(threads);
-           if (args) free(args);
-	   return -1;
-	}
+        printf("status = %d, i = %d", args->status, i);
+        if (args->status == -1){
+            printf("Error: Matrix is uninvertible!\n");
+            if (A) free(A);
+            if (X) free(X);
+            if (threads) free(threads);
+            if (args) free(args);
+            return -1;
+        }
     }
         
-    for (int i = 0; i < total_threads; i++)
+    for (int i = 0; i < total_threads; i++){
         if (pthread_join(threads[i], NULL)){
             printf("Cannot wait thread %d!\n", i);
 
@@ -233,6 +234,15 @@ int main(int argc, char **argv){
 
             return -1;
         }
+        if (args->status == -1){
+            printf("Error: Matrix is uninvertible!\n");
+            if (A) free(A);
+            if (X) free(X);
+            if (threads) free(threads);
+            if (args) free(args);
+            return -1;
+        }
+    }
     
     if( clock_gettime( CLOCK_MONOTONIC, &time_end) == -1 ) {
         perror( "clock gettime" );

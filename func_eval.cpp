@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <math.h>
+#include <stdio.h>
 
 #include "func_eval.h"
 
@@ -53,10 +54,12 @@ int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads, int *
 
 			tmp2 = sqrt(tmp1 + a[i * n + i] * a[i * n + i]);
 			
-			if (tmp2 < 1e-100){
+			/*if (tmp2 < 1e-100){
 				*status = -1;
+                printf ("status in func = %d", *status);
 				pthread_exit(NULL);
-			}
+                return -1;
+			}*/
 
 			a[i * n + i] -= tmp2;
 
@@ -119,6 +122,12 @@ int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads, int *
 			tmp1 = x[i * n + k];
 			for (j = i + 1; j < n; j++)
 				tmp1 -= a[i * n + j] * x[j * n + k];
+            /*if (a[i * n + i] < 1e-100){
+				*status = -1;
+                printf ("status in func = %d", *status);
+				pthread_exit(NULL);
+                return -1;
+			}*/
 			x[i * n + k] = tmp1/a[i * n + i];
 		}
 
