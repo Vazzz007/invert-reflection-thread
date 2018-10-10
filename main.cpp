@@ -22,7 +22,6 @@
  * -f formula - define formula
  */
 
-
 struct timespec diff(struct timespec start, struct timespec end);
 
 struct timespec diff(struct timespec start, struct timespec end)
@@ -44,12 +43,32 @@ typedef struct
     double *A;
     double *X;
     int my_rank;
+    double residual;
+} ARGS_mul;
+
+typedef struct
+{
+    int n;
+    double *A;
+    double *X;
+    int my_rank;
     int total_threads;
     int status;
 } ARGS;
 
 struct timespec time_thread_total;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void *Multiplication(void *p_arg);
+
+void *Multiplication(void *p_arg)
+{
+    ARGS_mul *arg = (ARGS_mul*)p_arg;
+
+    multi(arg->n, arg->A, arg->X, arg->my_rank, &arg->residual);
+
+    return NULL;
+}
 
 void *Inversion(void *p_arg);
 
@@ -94,9 +113,11 @@ int main(int argc, char **argv){
     double *A = NULL;
     FILE *fin;
     int result = 1;
+    double nev = 0.0;
     int total_threads;
     pthread_t *threads;
     ARGS *args;
+    ARGS_mul *args_mul;
     
     
     if ((get_args(&n, &inFileName, &verbose, &formula, &max_out, &total_threads, argc, argv)) != 0){
@@ -257,8 +278,7 @@ int main(int argc, char **argv){
         PrintMatrix(n, X, max_out);
         printf("\n");
         
-        printf("\nInversion time\t\t= %f sec.\n\
-                Total_thread_time\t\t= %f sec.\n\n", 
+        printf("\nInversion time\t\t= %f sec.\nTotal_thread_time\t= %f sec.\n\n",
                (double)time_end.tv_sec + (double)time_end.tv_nsec/(double)1000000000,
                (double)time_thread_total.tv_sec + (double)time_thread_total.tv_nsec/(double)1000000000);
         
@@ -316,8 +336,54 @@ int main(int argc, char **argv){
             
             fclose(fin);
         }
+
+        args_mul = (ARGS_mul*)malloc(total_threads * sizeof(ARGS_mul));
         
-        printf("\nSolution ||A * A^{-1} - I||\t= %e\n", SolutionError(n, A, X));
+        for (int i = 0; i < total_threads; i++){
+            args_mul[i].n = n;
+            args_mul[i].A = A;
+            args_mul[i].X = X;
+            args_mul[i].my_rank = i;
+            args_mul[i].residual = 0.0;
+        }
+
+        for (int i = 0; i < total_threads; i++){
+            if (pthread_create(threads + i, NULL, Multiplication, args_mul + i)){
+                printf("Cannot create thread %d!\n", i);
+
+                if (A) free(A);
+                if (X) free(X);
+                if (threads) free(threads);
+                if (args) free(args);
+                if (args_mul) free(args_mul);
+
+                return -1;
+            }
+        }
+
+        for (int i = 0; i < total_threads; i++){
+            if (pthread_join(threads[i], NULL)){
+                printf("Cannot wait thread %d!\n", i);
+
+                if (A) free(A);
+                if (X) free(X);
+                if (threads) free(threads);
+                if (args) free(args);
+                if (args_mul) free(args_mul);
+
+                return -1;
+            }
+        }
+
+        for (int i = 0; i < total_threads; i++){
+            nev += (1e9) * args_mul[i].residual;
+        }
+
+        printf("\nSolution threaded ||A * A^{-1} - I||\t= %e\n", nev);
+
+        free(args_mul);
+
+        //printf("\nSolution ||A * A^{-1} - I||\t= %e\n", SolutionError(n, A, X));
     }
 
     free(threads);

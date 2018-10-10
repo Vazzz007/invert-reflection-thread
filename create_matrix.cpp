@@ -118,3 +118,23 @@ double SolutionError(int n, double* a, double* x){
 
     return sqrt(rezult);
 }
+
+void multi(int n, double* a, double* x, int my_rank, double *residual)
+{
+    double tmp;
+    *residual = 0.0;
+
+    for (int i = my_rank * n / 4; i < (my_rank + 1) * n / 4; ++i){
+        for (int j = 0; j < n; ++j){
+            tmp = 0.0;
+            for (int k = 0; k < n; ++k)
+                tmp += a[i * n + k] * x[k * n + j];
+
+            if (i == j)
+                tmp -= 1.0;
+
+            *residual += tmp * tmp;
+
+        }
+    }
+}
