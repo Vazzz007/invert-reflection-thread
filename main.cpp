@@ -57,7 +57,7 @@ typedef struct
     int status;
 } ARGS;
 
-struct timespec time_thread_total;
+struct timespec time_thread_inv, time_thread_resid;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *Multiplication(void *p_arg);
@@ -65,8 +65,20 @@ void *Multiplication(void *p_arg);
 void *Multiplication(void *p_arg)
 {
     ARGS_mul *arg = (ARGS_mul*)p_arg;
+    struct timespec time_thread_start, time_thread_end;
 
     multi(arg->n, arg->A, arg->X, arg->my_rank, &arg->residual, arg->total_threads);
+
+    if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_end) == -1 ) {
+        perror( "clock gettime" );
+        exit( EXIT_FAILURE );
+    }
+    time_thread_end = diff(time_thread_start, time_thread_end);
+
+    pthread_mutex_lock(&mutex);
+    time_thread_resid.tv_sec += time_thread_end.tv_sec;
+    time_thread_resid.tv_nsec += time_thread_end.tv_nsec;
+    pthread_mutex_unlock(&mutex);
 
     return NULL;
 }
@@ -92,9 +104,9 @@ void *Inversion(void *p_arg)
     time_thread_end = diff(time_thread_start, time_thread_end);
 
     pthread_mutex_lock(&mutex);
-    time_thread_total.tv_sec += time_thread_end.tv_sec;
-    time_thread_total.tv_nsec += time_thread_end.tv_nsec;
-    printf("\nThread_number\t\t= %d\nThread_time\t= %f sec.\n\n",
+    time_thread_inv.tv_sec += time_thread_end.tv_sec;
+    time_thread_inv.tv_nsec += time_thread_end.tv_nsec;
+    printf("\nThread_number = %d. Work done!\nThread_time\t= %f sec.\n\n",
                arg->my_rank,
                (double)time_thread_end.tv_sec + (double)time_thread_end.tv_nsec/(double)1000000000);
     pthread_mutex_unlock(&mutex);
@@ -106,7 +118,7 @@ int main(int argc, char **argv){
     
     feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW | FE_UNDERFLOW);
     
-    struct timespec time_start, time_end;
+    struct timespec time_start, time_end, time_total, time_thread_total;
     
     int n = 0;
     int max_out = 0;
@@ -274,6 +286,7 @@ int main(int argc, char **argv){
         exit( EXIT_FAILURE );
     }
     time_end = diff(time_start, time_end);
+    time_total = time_end;
     
     if (result == -1){
         printf("\nCan't invert.\n");
@@ -282,9 +295,9 @@ int main(int argc, char **argv){
         PrintMatrix(n, X, max_out);
         printf("\n");
         
-        printf("\nInversion time\t\t= %f sec.\nTotal_thread_time\t= %f sec.\n\n",
-               (double)time_end.tv_sec + (double)time_end.tv_nsec/(double)1000000000,
-               (double)time_thread_total.tv_sec + (double)time_thread_total.tv_nsec/(double)1000000000);
+        printf("\nInversion time \t\t= %f sec.\nInversion_thread_time\t= %f sec.\n\n",
+               (double)time_total.tv_sec + (double)time_total.tv_nsec/(double)1000000000,
+               (double)time_thread_inv.tv_sec + (double)time_thread_inv.tv_nsec/(double)1000000000);
         
         
         if (inFileName == NULL){
@@ -342,6 +355,11 @@ int main(int argc, char **argv){
         }
 
         args_mul = (ARGS_mul*)malloc(total_threads * sizeof(ARGS_mul));
+
+        if( clock_gettime( CLOCK_MONOTONIC, &time_start) == -1 ) {
+            perror( "clock gettime" );
+            exit( EXIT_FAILURE );
+        }
         
         for (int i = 0; i < total_threads; i++){
             args_mul[i].n = n;
@@ -380,9 +398,28 @@ int main(int argc, char **argv){
             }
         }
 
+        if( clock_gettime( CLOCK_MONOTONIC, &time_end) == -1 ) {
+            perror( "clock gettime" );
+            exit( EXIT_FAILURE );
+        }
+        time_end = diff(time_start, time_end);
+        printf("\nResidual time \t\t= %f sec.\nResidual_thread_time\t= %f sec.\n\n",
+               (double)time_end.tv_sec + (double)time_end.tv_nsec/(double)1000000000,
+               (double)time_thread_resid.tv_sec + (double)time_thread_resid.tv_nsec/(double)1000000000);
+        time_total.tv_sec += time_end.tv_sec;
+        time_total.tv_nsec += time_end.tv_nsec;
+
+        time_thread_total.tv_sec = time_thread_inv.tv_sec + time_thread_resid.tv_sec;
+        time_thread_total.tv_nsec = time_thread_inv.tv_nsec + time_thread_resid.tv_nsec;
+
+
         for (int i = 0; i < total_threads; i++){
             nev += (1e9) * args_mul[i].residual;
         }
+
+        printf("\nTotal time \t\t= %f sec.\nTotal_thread_time\t= %f sec.\n\n",
+               (double)time_total.tv_sec + (double)time_total.tv_nsec/(double)1000000000,
+               (double)time_thread_total.tv_sec + (double)time_thread_total.tv_nsec/(double)1000000000);
 
         printf("\nSolution threaded ||A * A^{-1} - I||\t= %e\n", nev);
 
