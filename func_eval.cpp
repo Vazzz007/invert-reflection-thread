@@ -46,30 +46,50 @@ int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads, int *
 			for (j = 0; j < n; j++)
 				x[i * n + j] = (double)(i == j);
 
-	for (i = 0; i < n - 1; i++){
-		if (my_rank == 0){
+	for (i = 0; i < n; i++){
+       // if (my_rank == 0){
+        printf("\nmy_rank = %d , i = %d \n", my_rank, i);
+        //Нужно научиться передавать данные в другой thread
+        synchronize(total_threads);
 			tmp1 = 0.0;
 			for (j = i + 1; j < n; j++)
 				tmp1 += a[j * n + i] * a[j * n + i];
 
 			tmp2 = sqrt(tmp1 + a[i * n + i] * a[i * n + i]);
+            
+            
 
-            if (tmp2 < 1e-100){
-				*status = -1;
-                //printf ("status in func = %d", *status);
-				pthread_exit(NULL);
-                return -1;
-            }
-
+        if (tmp2 < 1e-100){
+            *status = -1;
+            //printf ("status in func = %d", *status);
+            pthread_exit(NULL);
+            return -1;
+        }
+        synchronize(total_threads);
+        if (my_rank == 0){
 			a[i * n + i] -= tmp2;
-
+        }
+        synchronize(total_threads);
 			tmp1 = sqrt(tmp1 + a[i * n + i] * a[i * n + i]);
 
-			tmp1 = 1.0/tmp1;
-			for (j = i; j < n; j++)
-				a[j * n + i] *= tmp1;
+        synchronize(total_threads);
+            
+        printf("\nmy_rank = %d , tmp1 = %f \n", my_rank, tmp1);
+            
+        if (tmp1 < 1e-100){
+            if (my_rank == 0)
+                a[i * n + i] += tmp2;
+            //Здесь нужно передать индекс i другим процессам
+            continue;
+        }
+        synchronize(total_threads);
 
-		}
+        tmp1 = 1.0/tmp1;
+        if (my_rank == 0)
+            for (j = i; j < n; j++)
+                a[j * n + i] *= tmp1;
+        //}  
+
 		synchronize(total_threads);
 
 		first_row = (n - i - 1) * my_rank;
@@ -105,18 +125,20 @@ int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads, int *
 				x[j * n + k] -= tmp1 * a[j * n + i];
 
 		}
-		synchronize(total_threads);
 
 		if (my_rank == 0)
 			a[i * n + i] = tmp2;
+
 	}
+    synchronize(total_threads);
 
 	first_row = n * my_rank;
 	first_row = first_row/total_threads;
 	last_row = n * (my_rank + 1);
 	last_row = last_row/total_threads;
+    printf("\nmy_rank = %d , Go to gauss\n", my_rank);
 
-	for (k = first_row; k < last_row; k++)
+	for (k = first_row; k < last_row; k++){
 		for (i = n - 1; i >= 0; i--)
 		{
 			tmp1 = x[i * n + k];
@@ -124,6 +146,9 @@ int InvMatrix(int n, double *a, double *x, int my_rank, int total_threads, int *
 				tmp1 -= a[i * n + j] * x[j * n + k];
 			x[i * n + k] = tmp1/a[i * n + i];
 		}
+		printf("\nmy_rank = %d , k = %d \n", my_rank, k);
+    }
 
+    printf("\nmy_rank = %d , Work done!\n", my_rank);
 	return 0;
 }
