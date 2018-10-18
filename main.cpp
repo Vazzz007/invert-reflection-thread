@@ -55,6 +55,7 @@ typedef struct
     int my_rank;
     int total_threads;
     int status;
+    int v;
 } ARGS;
 
 struct timespec time_thread_inv, time_thread_resid;
@@ -95,7 +96,7 @@ void *Inversion(void *p_arg)
         exit( EXIT_FAILURE );
     }
     
-    InvMatrix(arg->n, arg->A, arg->X, arg->my_rank, arg->total_threads, &arg->status);
+    InvMatrix(arg->n, arg->A, arg->X, arg->my_rank, arg->total_threads, &arg->status, arg->v);
     
     if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_end) == -1 ) {
         perror( "clock gettime" );
@@ -231,6 +232,7 @@ int main(int argc, char **argv){
         args[i].X = X;
         args[i].my_rank = i;
         args[i].total_threads = total_threads;
+        args[i].v = verbose;
     }
     
     if( clock_gettime( CLOCK_MONOTONIC, &time_start) == -1 ) {
@@ -414,7 +416,7 @@ int main(int argc, char **argv){
 
 
         for (int i = 0; i < total_threads; i++){
-            nev += (1e9) * args_mul[i].residual;
+            nev += (1) * args_mul[i].residual;
         }
 
         printf("\nTotal time \t\t= %f sec.\nTotal_thread_time\t= %f sec.\n\n",
