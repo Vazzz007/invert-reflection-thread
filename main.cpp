@@ -45,6 +45,7 @@ typedef struct
     int my_rank;
     double residual;
     int total_threads;
+    double tmp;
 } ARGS_mul;
 
 typedef struct
@@ -68,7 +69,7 @@ void *Multiplication(void *p_arg)
     ARGS_mul *arg = (ARGS_mul*)p_arg;
     struct timespec time_thread_start, time_thread_end;
 
-    multi(arg->n, arg->A, arg->X, arg->my_rank, &arg->residual, arg->total_threads);
+    multi(arg->n, arg->A, arg->X, arg->my_rank, &arg->residual, arg->total_threads, arg->tmp);
 
     if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_end) == -1 ) {
         perror( "clock gettime" );
@@ -79,6 +80,9 @@ void *Multiplication(void *p_arg)
     pthread_mutex_lock(&mutex);
     time_thread_resid.tv_sec += time_thread_end.tv_sec;
     time_thread_resid.tv_nsec += time_thread_end.tv_nsec;
+    //printf("\nThread_number = %d. Work done!\nThread_time\t= %f sec.\n\n",
+    //           arg->my_rank,
+    //           (double)time_thread_end.tv_sec + (double)time_thread_end.tv_nsec/(double)1000000000);
     pthread_mutex_unlock(&mutex);
 
     return NULL;
@@ -370,6 +374,7 @@ int main(int argc, char **argv){
             args_mul[i].my_rank = i;
             args_mul[i].residual = 0.0;
             args_mul[i].total_threads = total_threads;
+            args_mul[i].tmp = 0.0;
         }
 
         for (int i = 0; i < total_threads; i++){

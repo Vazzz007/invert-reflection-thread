@@ -1,4 +1,9 @@
+#include <pthread.h>
+#include <stdlib.h>
+#include <math.h>
+#include <stdio.h>
 #include "create_matrix.h"
+#include "func_eval.h"
 
 static int max(int i, int j){
     if (i >= j) {
@@ -119,10 +124,9 @@ double SolutionError(int n, double* a, double* x){
     return sqrt(rezult);
 }
 
-void multi(int n, double* a, double* x, int my_rank, double *residual, int total_threads)
+int multi(int n, double* a, double* x, int my_rank, double *residual, int total_threads, double tmp)
 {
-    double tmp;
-    *residual = 0.0;
+    //*residual = 0.0;
 
     for (int i = my_rank * n / total_threads; i < (my_rank + 1) * n / total_threads; ++i){
         for (int j = 0; j < n; ++j){
@@ -136,5 +140,9 @@ void multi(int n, double* a, double* x, int my_rank, double *residual, int total
             *residual += tmp * tmp;
 
         }
+    //printf("\nmy_rank = %d, i = %d, residual = %10.3e\n", my_rank, i, *residual);
     }
+    *residual = sqrt(*residual);
+    
+    return 0;
 }
