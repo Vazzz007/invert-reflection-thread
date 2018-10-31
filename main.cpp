@@ -68,13 +68,19 @@ void *Multiplication(void *p_arg)
 {
     ARGS_mul *arg = (ARGS_mul*)p_arg;
     struct timespec time_thread_start, time_thread_end;
+    
+    if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_start) == -1 ) {
+        perror( "clock gettime" );
+        exit( EXIT_FAILURE );
+    }
 
     multi(arg->n, arg->A, arg->X, arg->my_rank, &arg->residual, arg->total_threads, arg->tmp);
-
+    
     if( clock_gettime( CLOCK_THREAD_CPUTIME_ID, &time_thread_end) == -1 ) {
         perror( "clock gettime" );
         exit( EXIT_FAILURE );
     }
+
     time_thread_end = diff(time_thread_start, time_thread_end);
 
     pthread_mutex_lock(&mutex);
